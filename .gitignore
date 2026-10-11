@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Experiment output -- regenerate, never commit
+artifacts/
+reports/*.png
+reports/*.csv
+*.faiss
+
+# Hugging Face / model weights
+.cache/
+models/
+*.safetensors
+*.bin
+
+# Notebook checkpoints
+.ipynb_checkpoints/

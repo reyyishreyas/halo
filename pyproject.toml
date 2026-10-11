@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "halo"
+version = "0.1.0"
+description = "HALO: lightweight span-level hallucination detection for quantized RAG pipelines"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+dependencies = [
+    "torch>=2.1",
+    "transformers>=4.40",
+    "datasets>=2.19",
+    "faiss-cpu>=1.8",
+    "sentence-transformers>=3.0",
+    "scikit-learn>=1.4",
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# bitsandbytes is CUDA-only. Install on Colab / the lab GPU, never locally.
+quantize = ["bitsandbytes>=0.43"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[tool.setuptools.packages.find]
+include = ["halo*"]
+
+[tool.ruff]
+line-length = 79
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
