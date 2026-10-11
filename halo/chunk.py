@@ -67,55 +67,106 @@ def _units(
     count: Tokenizer,
     max_tokens: int,
     splitter: Splitter | None,
-) -> list[str]:
-    """Flatten sentences into packing units, cutting over-long ones.
+) -> list[tuple[str, int]]:
+    """Flatten sentences into sized packing units, cutting long ones.
 
-    With no splitter, an oversized sentence stays whole and is emitted
-    as its own chunk, which the embedder will then truncate.
+    Each unit carries the token count it was checked with, so the
+    packer never tokenizes the same text a second time.
+
+    Parameters
+    ----------
+    sentences : list[str]
+        Sentences in reading order.
+    count : Tokenizer
+        Counts the tokens in a string.
+    max_tokens : int
+        A sentence longer than this is cut when a ``splitter`` is
+        given.
+    splitter : Splitter, optional
+        Cuts a sentence into pieces of at most ``max_tokens``. Without
+        one, an oversized sentence stays whole and is emitted as its
+        own chunk, which the embedder will then truncate.
+
+    Returns
+    -------
+    list[tuple[str, int]]
+        ``(text, token count)`` pairs in reading order. Empty when
+        ``sentences`` holds no text.
     """
-    out: list[str] = []
+    out: list[tuple[str, int]] = []
     for sentence in sentences:
         text = sentence.strip()
         if not text:
             continue
-        if splitter is not None and len(count(text)) > max_tokens:
-            out.extend(
-                piece.strip()
-                for piece in splitter(text, max_tokens)
-                if piece.strip()
-            )
+        size = len(count(text))
+        if splitter is not None and size > max_tokens:
+            for piece in splitter(text, max_tokens):
+                piece = piece.strip()
+                if piece:
+                    out.append((piece, len(count(piece))))
         else:
-            out.append(text)
+            out.append((text, size))
     return out
 
 
 def _pack(
-    units: list[str],
+    units: list[tuple[str, int]],
     title: str,
     count: Tokenizer,
     min_tokens: int,
     max_tokens: int,
+    hard_max_tokens: int | None,
 ) -> list[Chunk]:
     """Greedily pack units, cutting only once past the floor.
 
     A chunk is cut only when it already holds ``min_tokens`` and the
     next unit will not fit. Without that condition a paragraph could
     be split into one full chunk plus a two-sentence remnant.
+
+    The floor yields to ``hard_max_tokens``: when adding a unit would
+    push the chunk past that ceiling, the cut is made even if the
+    chunk is still short. A short chunk costs a little retrieval
+    context; an over-ceiling chunk is truncated by the embedder and
+    loses its tail for good.
+
+    Parameters
+    ----------
+    units : list[tuple[str, int]]
+        ``(text, token count)`` pairs from :func:`_units`.
+    title : str
+        Source title recorded on every chunk produced.
+    count : Tokenizer
+        Counts tokens of a joined chunk for its ``token_count``.
+    min_tokens : int
+        Floor a chunk must reach before it is cut for space.
+    max_tokens : int
+        Upper bound the packer aims for.
+    hard_max_tokens : int, optional
+        Ceiling that overrides the floor. ``None`` keeps the floor
+        authoritative.
+
+    Returns
+    -------
+    list[Chunk]
+        Chunks in order.
     """
     chunks: list[Chunk] = []
     current: list[str] = []
     current_len = 0
 
-    for unit in units:
-        size = len(count(unit))
+    for text, size in units:
+        over_ceiling = (
+            hard_max_tokens is not None
+            and current_len + size > hard_max_tokens
+        )
         if (
             current
             and current_len + size > max_tokens
-            and current_len >= min_tokens
+            and (current_len >= min_tokens or over_ceiling)
         ):
             chunks.append(_make(current, title, count))
             current, current_len = [], 0
-        current.append(unit)
+        current.append(text)
         current_len += size
 
     if current:
@@ -168,11 +219,11 @@ def chunk_sentences(
         Upper bound. A single unit may exceed it only when no
         ``splitter`` was supplied.
     hard_max_tokens : int, optional
-        Ceiling the short-tail fold must never cross, normally the
-        embedder's context window. The fold may push a chunk past
-        ``max_tokens``, which is tolerable; pushing it past the window
-        is not, because the embedder would truncate it and drop the
-        tail. Set this whenever ``splitter`` is used.
+        Ceiling neither the pack nor the short-tail fold may cross,
+        normally the embedder's context window. Both may push a chunk
+        past ``max_tokens``, which is tolerable; pushing it past the
+        window is not, because the embedder would truncate it and drop
+        the tail. Set this whenever ``splitter`` is used.
 
     Returns
     -------
@@ -204,6 +255,7 @@ def chunk_sentences(
         count,
         min_tokens,
         max_tokens,
+        hard_max_tokens,
     )
 
     # A paragraph's remainder can sit far below the floor. Leaving it

@@ -106,6 +106,23 @@ def test_the_tail_fold_stops_at_the_hard_ceiling():
     assert [c.token_count for c in chunks] == [20, 20, 4]
 
 
+def test_the_pack_respects_the_hard_ceiling():
+    # The floor must not rebuild an over-ceiling chunk. 150 words sit
+    # below the 200-token floor, so without this the 450-word sentence
+    # packs in beside it and the 600-token result is truncated by the
+    # embedder -- the exact failure the splitter exists to prevent.
+    chunks = chunk_sentences(
+        [words(150), words(450)],
+        splitter=_word_splitter,
+        min_tokens=200,
+        max_tokens=500,
+        hard_max_tokens=512,
+    )
+    assert max(c.token_count for c in chunks) <= 512
+    assert [c.token_count for c in chunks] == [150, 450]
+    assert sum(len(c.sentences) for c in chunks) == 2
+
+
 def test_a_hard_ceiling_below_max_tokens_is_rejected():
     with pytest.raises(ValueError, match="hard_max_tokens"):
         chunk_sentences(
