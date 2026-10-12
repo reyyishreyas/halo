@@ -1,0 +1,13 @@
+# Phase 2 run: 8-bit (LLM.int8) with the standard outlier threshold
+# of 6.0, bitsandbytes' default.
+#
+# Every field except `precision` and `output` is shared with
+# fp16.yaml and nf4.yaml; tests/test_generate.py fails if that ever
+# drifts, so the only intended change between runs is quantization.
+precision: int8
+model_id: microsoft/Phi-3-mini-4k-instruct
+top_k: 5
+max_new_tokens: 128
+questions: 100
+seed: 0
+output: artifacts/generations/int8.jsonl

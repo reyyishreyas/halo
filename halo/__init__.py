@@ -5,9 +5,13 @@ Pipeline stages, in build order:
 1. :mod:`halo.data` -- load HotpotQA and TruthfulQA, make splits
 2. :mod:`halo.chunk` -- pack sentences into 200-500 token chunks
 3. :mod:`halo.index` -- embed chunks and search them with FAISS
+4. :mod:`halo.generate` -- load fp16 / 8-bit / 4-bit and answer
+   questions, keeping the log-probability of every generated token
 
-Phases 2 to 4 -- quantized generation, span-level detection, and the
-baseline comparison -- are not built yet.
+Phase 2 is built but has only been exercised where CUDA exists, which
+this machine does not have; the measured runs happen on a GPU. Phases
+3 and 4 -- the span detector and the baseline comparison -- are not
+built yet.
 """
 
 __version__ = "0.1.0"
@@ -32,6 +36,20 @@ from halo.data import (
     make_splits,
 )
 from halo.device import cuda_required, default_device
+from halo.generate import (
+    PRECISIONS,
+    GeneratedAnswer,
+    GenerationSettings,
+    answer_question,
+    build_messages,
+    build_quantization_config,
+    generate_answer,
+    load_generator,
+    load_settings,
+    render_prompt,
+    summarize,
+    write_jsonl,
+)
 from halo.index import (
     RetrievalIndex,
     ScoredChunk,
@@ -42,19 +60,31 @@ from halo.index import (
 
 __all__ = [
     "Chunk",
+    "GeneratedAnswer",
+    "GenerationSettings",
     "HotpotRecord",
+    "PRECISIONS",
     "Paragraph",
     "RetrievalIndex",
     "ScoredChunk",
     "TokenCodec",
     "TruthfulRecord",
+    "answer_question",
     "build_index",
+    "build_messages",
+    "build_quantization_config",
     "chunk_paragraphs",
     "chunk_sentences",
     "cuda_required",
     "default_device",
+    "generate_answer",
+    "load_generator",
     "load_hotpot",
+    "load_settings",
     "load_tokenizer",
     "load_truthful",
     "make_splits",
+    "render_prompt",
+    "summarize",
+    "write_jsonl",
 ]

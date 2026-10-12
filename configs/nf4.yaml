@@ -1,0 +1,13 @@
+# Phase 2 run: 4-bit NF4 with fp16 compute and double quantization
+# -- the QLoRA loading recipe.
+#
+# Every field except `precision` and `output` is shared with
+# fp16.yaml and int8.yaml; tests/test_generate.py fails if that ever
+# drifts, so the only intended change between runs is quantization.
+precision: nf4
+model_id: microsoft/Phi-3-mini-4k-instruct
+top_k: 5
+max_new_tokens: 128
+questions: 100
+seed: 0
+output: artifacts/generations/nf4.jsonl

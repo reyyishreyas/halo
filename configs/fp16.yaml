@@ -1,0 +1,13 @@
+# Phase 2 reference run: fp16 weights, no quantization. Everything
+# the 8-bit and 4-bit runs report is measured against this one.
+#
+# Every field except `precision` and `output` is shared with
+# int8.yaml and nf4.yaml; tests/test_generate.py fails if that ever
+# drifts, so the only intended change between runs is quantization.
+precision: fp16
+model_id: microsoft/Phi-3-mini-4k-instruct
+top_k: 5
+max_new_tokens: 128
+questions: 100
+seed: 0
+output: artifacts/generations/fp16.jsonl

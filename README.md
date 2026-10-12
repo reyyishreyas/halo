@@ -34,12 +34,13 @@ it loads no extra neural model.
 | Phase | Weeks | Scope | State |
 | ----- | ----- | ----- | ----- |
 | 1 | 1–2 | Data loading, chunking, FAISS retrieval | **built** |
-| 2 | 3–4 | Quantized generation at fp16 / 8-bit / 4-bit | not started |
+| 2 | 3–4 | Quantized generation at fp16 / 8-bit / 4-bit | **built** (awaiting GPU runs) |
 | 3 | 5–6 | Span segmentation, silver labels, detector | not started |
 | 4 | 7–8 | Baselines and evaluation report | not started |
 
-Only Phase 1 exists. Nothing about detection accuracy is claimed yet, because
-nothing about it has been measured.
+Phases 1 and 2 are built. Phase 2 has not run on a GPU yet, so no generation,
+latency or memory numbers exist. Nothing about detection accuracy is claimed
+yet, because nothing about it has been measured.
 
 ## Phase 1 — measured results
 
@@ -62,6 +63,32 @@ Reproduce:
 ```bash
 python scripts/smoke_retrieval.py 50 5
 ```
+
+## Phase 2 — built, not yet measured
+
+`halo/generate.py` loads the same model at three precisions and answers
+questions greedily, keeping the log-probability of every generated token plus
+per-answer latency and peak GPU memory:
+
+| Config | Weights |
+| ------ | ------- |
+| `configs/fp16.yaml` | fp16, the reference baseline |
+| `configs/int8.yaml` | 8-bit (LLM.int8, standard outlier threshold 6.0) |
+| `configs/nf4.yaml` | 4-bit NF4, fp16 compute, double quantization (QLoRA recipe) |
+
+The three files share every other field — model, top-k, token budget, question
+count, seed — and `tests/test_generate.py` fails if that ever drifts, so the
+only intended change between runs is the quantization setting. Retrieval is
+computed once and reused by all three precisions, so quantization cannot
+change what the model saw.
+
+Run it on a CUDA GPU with
+[`notebooks/halo_colab.ipynb`](notebooks/halo_colab.ipynb) (Colab free T4 fits
+all three). It writes one JSONL record per question per precision under
+`artifacts/generations/`.
+
+No generation, latency or memory numbers appear here yet: this machine has no
+CUDA GPU, and nothing is claimed before it is measured.
 
 ## Setup
 
@@ -102,9 +129,13 @@ halo/
   data.py     HotpotQA and TruthfulQA loading, deterministic splits
   chunk.py    sentence-preserving packing into 200-500 token chunks
   index.py    embeddings, FAISS index, cosine search, token codec
+  generate.py quantized loading, greedy answers, per-token log-probs
   device.py   CUDA / MPS / CPU selection
+configs/      one YAML per precision run
 scripts/
   smoke_retrieval.py
+notebooks/
+  halo_colab.ipynb   Phase 2 GPU runs
 tests/
 ```
 
