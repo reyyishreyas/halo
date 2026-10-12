@@ -19,10 +19,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from halo.chunk import chunk_sentences
-from halo.data import load_hotpot, load_truthful
-from halo.device import default_device
-from halo.index import DEFAULT_EMBEDDER, build_index, load_tokenizer
+try:
+    from halo.chunk import chunk_sentences
+    from halo.data import load_hotpot, load_truthful
+    from halo.device import default_device
+    from halo.index import DEFAULT_EMBEDDER, build_index, load_tokenizer
+except ModuleNotFoundError as exc:  # wrong interpreter, not a code bug
+    sys.exit(
+        f"missing dependency ({exc.name}); this script must run with the\n"
+        "halo env's python, not another interpreter on your PATH. Check:\n"
+        "  conda activate halo\n"
+        "  which python   # expect .../envs/halo/bin/python\n"
+        "or bypass PATH entirely:\n"
+        "  conda run -n halo python scripts/smoke_retrieval.py 50 5"
+    )
 
 
 def main(n_questions: int = 50, k: int = 5) -> None:
