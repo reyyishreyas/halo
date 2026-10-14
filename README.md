@@ -36,12 +36,13 @@ it loads no extra neural model.
 | 1 | 1–2 | Data loading, chunking, FAISS retrieval | **built** |
 | 2 | 3–4 | Quantized generation at fp16 / 8-bit / 4-bit | **built** (awaiting GPU runs) |
 | 3 | 5–6 | Span segmentation, silver labels, detector | **built** (awaiting data) |
-| 4 | 7–8 | Baselines and evaluation report | not started |
+| 4 | 7–8 | Baselines and evaluation report | **built** (awaiting data) |
 
-Phases 1, 2 and 3 are built. Phase 2 has not run on a GPU yet, so no generation,
-latency or memory numbers exist. Phase 3 has only been exercised by its tests so
-far, because its real inputs are the Phase 2 files. Nothing about detection
-accuracy is claimed yet, because nothing about it has been measured.
+Phases 1–4 are built. Phase 2 has not run on a GPU yet, so no generation,
+latency or memory numbers exist. Phases 3 and 4 have only been exercised by
+their tests so far, because their real inputs are the Phase 2 files. Nothing
+about detection accuracy is claimed yet, because nothing about it has been
+measured.
 
 ## Phase 1 — measured results
 
@@ -116,6 +117,39 @@ uses balanced class weights.
 Detection metrics need the Phase 2 JSONL files, so no F1 or hallucination-rate
 numbers exist yet.
 
+## Phase 4 — built, not yet measured
+
+`halo/baselines.py` implements the comparison methods behind one interface, so
+`halo/metrics.py` scores every method the same way:
+
+| Method | Extra cost | Role |
+| ------ | ---------- | ---- |
+| `no_verification` | none | never flags anything; the floor |
+| `confidence_only` | none — uses generation's own log-probs | confidence ablation |
+| `grounding_only` | one embedding per answer | grounding ablation |
+| `nli` | one frozen NLI call per span | HALT-RAG-style; the *same* model as the training labels, deliberately |
+| `second_verifier` | one LLM call per span | the expensive method HALO exists to replace |
+
+A LettuceDetect-style token classifier is intentionally not built: it needs a
+fine-tuned transformer and labelled token data, which the proposal allows only
+"if resources allow". The two ablations answer the question it would
+otherwise — what does each signal contribute on its own?
+
+`halo/metrics.py` reports span-level precision, recall, F1, accuracy and
+hallucination rate, micro (all spans) or macro (one vote per question).
+`halo/report.py` renders the comparison table including per-method latency,
+measured when the runs exist.
+
+One rule the evaluation depends on: **training labels and evaluation labels
+must not come from the same source.** The detector trains on silver labels
+from the frozen NLI model, so scoring it against those same judgments would
+be circular — the `nli` baseline would score perfectly by construction.
+Evaluation labels will come from an LLM verifier or human annotation, and
+the report will say which.
+
+No Phase 4 numbers appear here yet: they need the Phase 2 files and an
+evaluation label source, and nothing is claimed before it is measured.
+
 ## Setup
 
 ```bash
@@ -160,6 +194,10 @@ halo/
   signals.py  confidence and grounding scores per span
   labels.py   silver labels from a frozen NLI model
   detector.py standardized logistic-regression detector
+  baselines.py comparison methods: no-verification, thresholds, NLI,
+               second verifier
+  metrics.py  span-level precision, recall, F1, hallucination rate
+  report.py   markdown comparison tables for Phase 4
   device.py   CUDA / MPS / CPU selection
 configs/      one YAML per precision run
 scripts/

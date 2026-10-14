@@ -12,12 +12,16 @@ Pipeline stages, in build order:
 6. :mod:`halo.signals` -- token confidence and grounding per span
 7. :mod:`halo.labels` -- silver span labels from a frozen NLI model
 8. :mod:`halo.detector` -- standardized logistic-regression detector
+9. :mod:`halo.baselines` -- the comparison methods behind one interface
+10. :mod:`halo.metrics` -- span-level precision, recall, F1,
+    hallucination rate
+11. :mod:`halo.report` -- Markdown comparison tables
 
 Phase 1 and Phase 3 run and are tested on this machine. Phase 2 has
 only been exercised where CUDA exists, which this machine does not
-have; the measured runs happen on a GPU, and Phase 3's real inputs are
-those runs' output. Phase 4 -- the baseline comparison -- is not built
-yet.
+have; the measured runs happen on a GPU, and Phases 3 and 4 consume
+those runs' output. All four phases are built and tested here; the
+measured generation and detection numbers await the GPU runs.
 """
 
 __version__ = "0.1.0"
@@ -32,6 +36,14 @@ import os
 # so a library bump cannot silently corrupt retrieval scores.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
+from halo.baselines import (
+    ConfidenceThreshold,
+    GroundingThreshold,
+    NLIBaseline,
+    NoVerification,
+    SecondVerifier,
+    SpanBaseline,
+)
 from halo.chunk import Chunk, chunk_paragraphs, chunk_sentences
 from halo.data import (
     HotpotRecord,
@@ -72,22 +84,32 @@ from halo.labels import (
     premise_from_record,
     silver_labels,
 )
+from halo.metrics import DetectionMetrics, detection_metrics, macro_average
+from halo.report import ReportRow, comparison_table, save_report
 from halo.signals import grounding_scores, max_cosine, mean_token_logprob
 from halo.spans import Span, answer_spans, split_sentences, token_char_offsets
 
 __all__ = [
     "Chunk",
+    "ConfidenceThreshold",
     "DEFAULT_NLI_MODEL",
+    "DetectionMetrics",
     "GROUNDED",
-    "HALLUCINATED",
     "GeneratedAnswer",
     "GenerationSettings",
+    "GroundingThreshold",
+    "HALLUCINATED",
     "HotpotRecord",
+    "NLIBaseline",
+    "NoVerification",
     "PRECISIONS",
     "Paragraph",
+    "ReportRow",
     "RetrievalIndex",
     "ScoredChunk",
+    "SecondVerifier",
     "Span",
+    "SpanBaseline",
     "SpanDetector",
     "TokenCodec",
     "TruthfulRecord",
@@ -98,8 +120,10 @@ __all__ = [
     "build_quantization_config",
     "chunk_paragraphs",
     "chunk_sentences",
+    "comparison_table",
     "cuda_required",
     "default_device",
+    "detection_metrics",
     "generate_answer",
     "grounding_scores",
     "load_generator",
@@ -108,11 +132,13 @@ __all__ = [
     "load_settings",
     "load_tokenizer",
     "load_truthful",
+    "macro_average",
     "make_splits",
     "max_cosine",
     "mean_token_logprob",
     "premise_from_record",
     "render_prompt",
+    "save_report",
     "silver_labels",
     "split_sentences",
     "summarize",
