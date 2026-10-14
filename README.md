@@ -35,12 +35,13 @@ it loads no extra neural model.
 | ----- | ----- | ----- | ----- |
 | 1 | 1–2 | Data loading, chunking, FAISS retrieval | **built** |
 | 2 | 3–4 | Quantized generation at fp16 / 8-bit / 4-bit | **built** (awaiting GPU runs) |
-| 3 | 5–6 | Span segmentation, silver labels, detector | not started |
+| 3 | 5–6 | Span segmentation, silver labels, detector | **built** (awaiting data) |
 | 4 | 7–8 | Baselines and evaluation report | not started |
 
-Phases 1 and 2 are built. Phase 2 has not run on a GPU yet, so no generation,
-latency or memory numbers exist. Nothing about detection accuracy is claimed
-yet, because nothing about it has been measured.
+Phases 1, 2 and 3 are built. Phase 2 has not run on a GPU yet, so no generation,
+latency or memory numbers exist. Phase 3 has only been exercised by its tests so
+far, because its real inputs are the Phase 2 files. Nothing about detection
+accuracy is claimed yet, because nothing about it has been measured.
 
 ## Phase 1 — measured results
 
@@ -90,6 +91,31 @@ all three). It writes one JSONL record per question per precision under
 No generation, latency or memory numbers appear here yet: this machine has no
 CUDA GPU, and nothing is claimed before it is measured.
 
+## Phase 3 — built, not yet measured
+
+Four small modules, all runnable and tested on this machine:
+
+| Module | Job |
+| ------ | --- |
+| `halo/spans.py` | Cut each answer into sentences and align them to the exact tokens that produced them |
+| `halo/signals.py` | Mean token log-probability, and max cosine similarity to any retrieved chunk |
+| `halo/labels.py` | Silver training labels from a frozen NLI model (`cross-encoder/nli-deberta-v3-base`) |
+| `halo/detector.py` | Standardized logistic regression with balanced class handling, saved as readable JSON |
+
+Alignment never re-tokenizes the answer: offsets come from decoding
+progressively longer prefixes of the stored token ids — the same call that
+produced the answer in the first place — so the end token and the spaces
+between sentences are excluded from every span by construction.
+
+The NLI labeler is deliberately the same model that will appear as a Phase 4
+baseline, so the detector never trains on labels from anything stronger than a
+method the comparison already reports. Its labels are noisy (a neutral but
+reasonable inference becomes a positive), which is exactly why the regression
+uses balanced class weights.
+
+Detection metrics need the Phase 2 JSONL files, so no F1 or hallucination-rate
+numbers exist yet.
+
 ## Setup
 
 ```bash
@@ -130,6 +156,10 @@ halo/
   chunk.py    sentence-preserving packing into 200-500 token chunks
   index.py    embeddings, FAISS index, cosine search, token codec
   generate.py quantized loading, greedy answers, per-token log-probs
+  spans.py    sentence spans aligned to generated tokens
+  signals.py  confidence and grounding scores per span
+  labels.py   silver labels from a frozen NLI model
+  detector.py standardized logistic-regression detector
   device.py   CUDA / MPS / CPU selection
 configs/      one YAML per precision run
 scripts/
