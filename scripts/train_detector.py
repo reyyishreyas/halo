@@ -32,7 +32,7 @@ try:
     from halo.detector import SpanDetector
     from halo.generate import DEFAULT_MODEL
     from halo.index import DEFAULT_EMBEDDER
-    from halo.labels import load_nli, premise_from_record, silver_labels
+    from halo.labels import load_nli, premises_from_record, silver_labels
     from halo.signals import features, grounding_scores, mean_token_logprob
     from halo.spans import answer_spans
 except ModuleNotFoundError as exc:  # wrong interpreter, not a code bug
@@ -104,7 +104,9 @@ def main(input_path: str, output: str) -> None:
 
     for record in records:
         try:
-            premise = premise_from_record(record)
+            # One premise per chunk so the NLI model never truncates
+            # away evidence (see halo.labels module docstring).
+            premises = premises_from_record(record)
             spans = answer_spans(
                 record["answer"], record["token_ids"], codec
             )
@@ -123,7 +125,7 @@ def main(input_path: str, output: str) -> None:
         ]
         chunk_texts = [c["text"] for c in record["retrieved"]]
         groundings = grounding_scores(encoder, span_texts, chunk_texts)
-        labels = silver_labels(premise, span_texts, nli)
+        labels = silver_labels(premises, span_texts, nli)
 
         all_features.append(features(confidences, groundings))
         all_labels.extend(int(label) for label in labels)

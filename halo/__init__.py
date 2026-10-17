@@ -82,6 +82,7 @@ from halo.labels import (
     HALLUCINATED,
     load_nli,
     premise_from_record,
+    premises_from_record,
     silver_labels,
 )
 from halo.metrics import DetectionMetrics, detection_metrics, macro_average
@@ -137,6 +138,7 @@ __all__ = [
     "max_cosine",
     "mean_token_logprob",
     "premise_from_record",
+    "premises_from_record",
     "render_prompt",
     "save_report",
     "silver_labels",

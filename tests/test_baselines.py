@@ -110,17 +110,27 @@ def test_grounding_threshold_needs_retrieved_chunks():
 
 
 def test_nli_baseline_reuses_the_silver_labeler():
+    # 2 spans x 3 premises (2 chunks + 1 joint top-2) = 6 pairs.
     model = _StubNLI(
         [
-            [0.05, 0.90, 0.05],  # entailment -> grounded
-            [0.80, 0.10, 0.10],  # contradiction -> hallucinated
+            [0.80, 0.10, 0.10],  # chunk A vs "Cats purr." -> contradiction
+            [0.05, 0.90, 0.05],  # chunk B vs "Cats purr." -> entailment
+            [0.05, 0.90, 0.05],  # joint vs "Cats purr." -> entailment
+            [0.80, 0.10, 0.10],  # chunk A vs "Cats fly." -> contradiction
+            [0.10, 0.20, 0.70],  # chunk B vs "Cats fly." -> neutral
+            [0.10, 0.20, 0.70],  # joint vs "Cats fly." -> neutral
         ]
     )
     labels = NLIBaseline(model).predict(RECORD, SPANS)
+    # "Cats purr." grounded by chunk B (and joint); "Cats fly." not.
     assert labels.tolist() == [0, 1]
-    # The premise is the titled chunks; hypotheses are span texts.
+    # One premise per chunk, then the joint top-2, hypothesis-major.
     assert model.pairs == [
+        ("Cats: Cats purr.", "Cats purr."),
+        ("Sleep: Cats sleep.", "Cats purr."),
         (PREMISE, "Cats purr."),
+        ("Cats: Cats purr.", "Cats fly."),
+        ("Sleep: Cats sleep.", "Cats fly."),
         (PREMISE, "Cats fly."),
     ]
 

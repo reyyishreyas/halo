@@ -16,13 +16,19 @@ it doubles as the Phase 4 NLI baseline, so the
 training labels never come from anything stronger than a baseline the
 comparison already reports.
 
-Two honest limitations, both by design:
+Each sentence is judged against the retrieved chunks one at a time,
+not against all of them concatenated. The cross-encoder reads at most
+512 tokens per pair; five HotpotQA chunks joined run well past that,
+so a single joined premise would be silently truncated to its first
+chunk or two and the rest of the evidence would never be seen. One
+chunk per pair keeps every comparison inside the window, and a span is
+called grounded when *any* chunk entails it -- the same max-over-chunks
+rule the grounding signal already uses.
 
-- Labels are noisy. A neutral-but-reasonable inference becomes
-  positive, which is why the detector trains with balanced class
-  weights rather than trusting the label distribution.
-- The premise is truncated to the NLI model's window (512 tokens), so
-  for long contexts only the first retrieved chunks are actually read.
+One honest limitation, by design: labels are noisy. A
+neutral-but-reasonable inference becomes positive, which is why the
+detector trains with balanced class weights rather than trusting the
+label distribution.
 """
 
 from __future__ import annotations
@@ -93,15 +99,20 @@ def _label_index(model: Any, name: str) -> int:
 
 
 def silver_labels(
-    premise: str, hypotheses: Sequence[str], model: Any
+    premise: str | Sequence[str],
+    hypotheses: Sequence[str],
+    model: Any,
 ) -> np.ndarray:
-    """Label each hypothesis against one premise with frozen NLI.
+    """Label each hypothesis against the context with frozen NLI.
 
     Parameters
     ----------
-    premise : str
-        The retrieved context, e.g. the chunk texts joined with blank
-        lines. The model's tokenizer truncates it to its window.
+    premise : str or Sequence[str]
+        The evidence. A single string is used as one premise. A list
+        is treated as separate chunk premises: each hypothesis is
+        judged against every chunk, and grounded if any chunk entails
+        it. Passing one premise per chunk keeps every pair inside the
+        model's 512-token window (see the module docstring).
     hypotheses : Sequence[str]
         Sentence spans of the generated answer.
     model : Any
@@ -116,25 +127,102 @@ def silver_labels(
     """
     if not hypotheses:
         return np.empty(0, dtype=int)
+    premises = [premise] if isinstance(premise, str) else list(premise)
+    if not premises:
+        raise ValueError("silver_labels needs at least one premise")
     entailment = _label_index(model, "entailment")
-    probabilities = np.atleast_2d(
-        np.asarray(model.predict([(premise, h) for h in hypotheses]))
-    )
-    if probabilities.shape[0] != len(hypotheses):
+    # (hypothesis, chunk) order so a single premise yields one row per
+    # hypothesis, matching the original single-premise layout.
+    pairs = [
+        (chunk, hypothesis)
+        for hypothesis in hypotheses
+        for chunk in premises
+    ]
+    probabilities = np.atleast_2d(np.asarray(model.predict(pairs)))
+    expected = len(hypotheses) * len(premises)
+    if probabilities.shape[0] != expected:
         raise ValueError(
             f"NLI model returned {probabilities.shape[0]} rows for "
-            f"{len(hypotheses)} hypotheses"
+            f"{expected} premise-hypothesis pairs"
         )
     judgment = probabilities.argmax(axis=1)
-    # Entailment -> grounded (0); any other judgment -> 1.
-    return (judgment != entailment).astype(int)
+    # Grounded when any premise's judgment is entailment (0); else 1.
+    entails = (judgment == entailment).reshape(len(hypotheses), len(premises))
+    return (~entails.any(axis=1)).astype(int)
 
 
-def premise_from_record(record: dict) -> str:
-    """Build the NLI premise from a Phase 2 record's retrieved chunks.
+def _titled_chunks(record: dict) -> list[str]:
+    """Build one title-prefixed string per retrieved chunk.
 
     Titles are prefixed to the text because many answers refer to
     entities by name, and the title is evidence too.
+
+    Parameters
+    ----------
+    record : dict
+        A Phase 2 JSONL record with a ``retrieved`` list.
+
+    Returns
+    -------
+    list of str
+        One titled string per retrieved chunk.
+
+    Raises
+    ------
+    ValueError
+        If the record holds no retrieved chunks.
+    """
+    retrieved = record.get("retrieved") or []
+    if not retrieved:
+        raise ValueError("record has no retrieved chunks to use as premise")
+    return [f"{chunk['title']}: {chunk['text']}" for chunk in retrieved]
+
+
+def premises_from_record(record: dict, joint_top: int = 2) -> list[str]:
+    """Build NLI premises from a record's retrieved chunks.
+
+    Returns one premise per chunk, so each comparison stays inside the
+    model's window (see the module docstring). When ``joint_top`` is
+    at least 2 and that many chunks exist, one extra premise joins the
+    top ``joint_top`` chunks. Multi-hop questions (HotpotQA's whole
+    design) are entailed by two paragraphs *together* but by neither
+    alone, so the joint premise gives such claims a premise that can
+    actually entail them. A span stays grounded when any premise
+    entails it, so the joint premise can only recover grounded spans,
+    never invent hallucinations.
+
+    Parameters
+    ----------
+    record : dict
+        A Phase 2 JSONL record with a ``retrieved`` list.
+    joint_top : int
+        How many leading chunks to also judge jointly. 0 disables the
+        joint premise; default 2 matches HotpotQA's two gold
+        paragraphs.
+
+    Returns
+    -------
+    list of str
+        One titled premise per chunk, plus the joint premise if any.
+
+    Raises
+    ------
+    ValueError
+        If the record holds no retrieved chunks.
+    """
+    premises = _titled_chunks(record)
+    if joint_top >= 2 and len(premises) >= joint_top:
+        premises = premises + ["\n\n".join(premises[:joint_top])]
+    return premises
+
+
+def premise_from_record(record: dict) -> str:
+    """Build a single joined NLI premise from a record's chunks.
+
+    Kept for callers that need one string (for example the
+    second-verifier baseline, which passes a whole context to an
+    injected callable). Prefer :func:`premises_from_record` for NLI
+    judging, which avoids the model's context-window truncation.
 
     Parameters
     ----------
@@ -151,9 +239,4 @@ def premise_from_record(record: dict) -> str:
     ValueError
         If the record holds no retrieved chunks.
     """
-    retrieved = record.get("retrieved") or []
-    if not retrieved:
-        raise ValueError("record has no retrieved chunks to use as premise")
-    return "\n\n".join(
-        f"{chunk['title']}: {chunk['text']}" for chunk in retrieved
-    )
+    return "\n\n".join(_titled_chunks(record))

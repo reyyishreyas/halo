@@ -42,7 +42,11 @@ from typing import Any
 
 import numpy as np
 
-from halo.labels import premise_from_record, silver_labels
+from halo.labels import (
+    premise_from_record,
+    premises_from_record,
+    silver_labels,
+)
 from halo.signals import grounding_scores, mean_token_logprob
 from halo.spans import Span
 
@@ -240,8 +244,9 @@ class NLIBaseline(SpanBaseline):
         Parameters
         ----------
         record : dict
-            A Phase 2 record; its retrieved chunks become the NLI
-            premise.
+            A Phase 2 record; its retrieved chunks are judged one at
+            a time (max-pooled) so the NLI model never truncates away
+            evidence.
         spans : Sequence[Span]
             Sentence spans of the generated answer.
 
@@ -250,9 +255,9 @@ class NLIBaseline(SpanBaseline):
         numpy.ndarray
             0 where NLI found entailment, 1 otherwise.
         """
-        premise = premise_from_record(record)
+        premises = premises_from_record(record)
         return silver_labels(
-            premise, [span.text for span in spans], self._model
+            premises, [span.text for span in spans], self._model
         )
 
 
