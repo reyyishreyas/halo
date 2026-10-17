@@ -34,7 +34,7 @@ from transformers import (
     BitsAndBytesConfig,
 )
 
-from halo.device import cuda_required
+from halo.device import cuda_required, default_device
 from halo.index import ScoredChunk
 
 PRECISIONS: tuple[str, ...] = ("fp16", "int8", "nf4")
@@ -239,17 +239,32 @@ def render_prompt(tokenizer: Any, question: str, chunks: Sequence[str]) -> str:
     )
 
 
-def load_generator(settings: GenerationSettings) -> tuple[Any, Any]:
+def load_generator(
+    settings: GenerationSettings,
+    device: torch.device | str | None = None,
+) -> tuple[Any, Any]:
     """Load the model and tokenizer for one precision run.
 
     All three conditions use fp16 weights or fp16 compute, so the
     dtype is never a second variable: the runs differ only in
     quantization.
 
+    The reference run (fp16) loads on any torch device, so it can
+    also be produced locally on a Mac (MPS). The 8-bit and 4-bit
+    runs load through bitsandbytes, which has no reliable MPS or CPU
+    backend; attempting them off-CUDA would silently change the
+    quantizer and break the comparison, so they are still guarded by
+    :func:`halo.device.cuda_required`.
+
     Parameters
     ----------
     settings : GenerationSettings
         Run configuration.
+    device : torch.device or str or None
+        Target device for the fp16 run. ``None`` uses
+        :func:`halo.device.default_device` (CUDA, else MPS, else
+        CPU). Ignored for the quantized runs, which are placed by
+        bitsandbytes itself.
 
     Returns
     -------
@@ -261,20 +276,35 @@ def load_generator(settings: GenerationSettings) -> tuple[Any, Any]:
     Raises
     ------
     RuntimeError
-        If CUDA is unavailable. bitsandbytes has no MPS or CPU
-        backend, and the measured runs happen on one GPU so the
-        memory numbers mean the same thing.
+        If an 8-bit or 4-bit run is requested without CUDA.
     """
-    cuda_required(f"generation ({settings.precision})")
+    if settings.precision != "fp16":
+        cuda_required(f"generation ({settings.precision})")
     tokenizer = AutoTokenizer.from_pretrained(settings.model_id)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(
-        settings.model_id,
-        dtype=torch.float16,
-        quantization_config=build_quantization_config(settings.precision),
-        device_map="auto",
-    )
+
+    if settings.precision == "fp16":
+        target = (
+            torch.device(device)
+            if device is not None
+            else default_device()
+        )
+        # float16 is unusable on CPU; the fp16-named run keeps its
+        # name on CPU by computing in float32 rather than lying
+        # about precision.
+        dtype = torch.float16 if target.type != "cpu" else torch.float32
+        model = AutoModelForCausalLM.from_pretrained(
+            settings.model_id, dtype=dtype
+        )
+        model.to(target)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            settings.model_id,
+            dtype=torch.float16,
+            quantization_config=build_quantization_config(settings.precision),
+            device_map="auto",
+        )
     model.eval()
     return model, tokenizer
 
