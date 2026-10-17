@@ -181,6 +181,60 @@ def detection_metrics(
     )
 
 
+def best_threshold(scores: Sequence[float], labels: Sequence[int]) -> float:
+    """Pick the score cut-off that best separates two classes.
+
+    Used to choose an ablation's cut-off on *training* labels so it is
+    never fitted on the evaluation labels (which would leak the answer).
+    A span is flagged when ``score < threshold`` -- low confidence or low
+    grounding means hallucinated. Candidates are the observed scores, and
+    the cut-off maximises F1 against the given labels.
+
+    Parameters
+    ----------
+    scores : Sequence[float]
+        One score per span; lower means more hallucinated.
+    labels : Sequence[int]
+        Binary labels per span: 0 grounded, 1 hallucinated.
+
+    Returns
+    -------
+    float
+        The cut-off with the best F1; the median score when no cut-off
+        beats F1 0, so the flagged set is never accidentally empty.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are empty or differ in length.
+    """
+    score_array = np.asarray(scores, dtype=np.float64)
+    label_array = np.asarray(labels, dtype=int)
+    if score_array.shape != label_array.shape or score_array.size == 0:
+        raise ValueError(
+            f"scores {score_array.shape} and labels "
+            f"{label_array.shape} must be non-empty and equal"
+        )
+    best_f1 = -1.0
+    best_cut = float(np.median(score_array))
+    for cut in np.unique(score_array):
+        predicted = (score_array < cut).astype(int)
+        tp = int(((predicted == 1) & (label_array == 1)).sum())
+        fp = int(((predicted == 1) & (label_array == 0)).sum())
+        fn = int(((predicted == 0) & (label_array == 1)).sum())
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+        if f1 > best_f1:
+            best_f1 = f1
+            best_cut = float(cut)
+    return best_cut
+
+
 def macro_average(
     per_question: Sequence[DetectionMetrics],
 ) -> DetectionMetrics:

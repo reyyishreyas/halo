@@ -85,7 +85,12 @@ from halo.labels import (
     premises_from_record,
     silver_labels,
 )
-from halo.metrics import DetectionMetrics, detection_metrics, macro_average
+from halo.metrics import (
+    DetectionMetrics,
+    best_threshold,
+    detection_metrics,
+    macro_average,
+)
 from halo.report import ReportRow, comparison_table, save_report
 from halo.signals import grounding_scores, max_cosine, mean_token_logprob
 from halo.spans import Span, answer_spans, split_sentences, token_char_offsets
@@ -125,6 +130,7 @@ __all__ = [
     "cuda_required",
     "default_device",
     "detection_metrics",
+    "best_threshold",
     "generate_answer",
     "grounding_scores",
     "load_generator",
